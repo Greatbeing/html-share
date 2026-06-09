@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTML Share Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f0f23;--bg2:#1a1a3e;--bg3:#252550;--bg4:#2d2d5e;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+  --accent:#6366f1;--accent2:#818cf8;--accent3:#4f46e5;
+  --success:#22c55e;--warning:#f59e0b;--error:#ef4444;
+  --radius:10px;--radius-sm:6px;--shadow:0 4px 24px rgba(0,0,0,.4);
+  --font-mono:'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace;
+  --font-ui:'Inter','PingFang SC','Microsoft YaHei','Noto Sans SC',system-ui,sans-serif;
+  --transition:all .2s ease;
+}
+html,body{height:100%;font-family:var(--font-ui);background:var(--bg);color:var(--text);overflow:hidden}
+button{font-family:var(--font-ui);cursor:pointer;border:none;outline:none;transition:var(--transition)}
+button:hover{transform:translateY(-1px)}
+button:active{transform:translateY(0)}
+input,textarea,select{font-family:var(--font-ui);outline:none;border:none;transition:var(--transition)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
+
+/* Toast */
+.toast-container{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{padding:10px 20px;border-radius:var(--radius);font-size:14px;color:#fff;pointer-events:auto;animation:toastIn .3s ease,toastOut .3s ease 2.7s forwards;box-shadow:var(--shadow);max-width:400px;text-align:center;word-break:break-all}
+.toast.success{background:var(--success)}
+.toast.error{background:var(--error)}
+.toast.warning{background:var(--warning);color:#000}
+.toast.info{background:var(--accent)}
+@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(-10px)}}
+
+/* Loading */
+.loading-overlay{position:fixed;inset:0;background:rgba(15,15,35,.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.spinner{width:40px;height:40px;border:3px solid var(--bg4);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--text2);font-size:14px}
+
+/* ============ EDIT MODE ============ */
+#edit-mode{display:flex;flex-direction:column;height:100vh}
+.edit-header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0;gap:12px;flex-wrap:wrap}
+.edit-header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+.header-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--bg4)}
+.btn-secondary:hover{background:var(--bg4);border-color:var(--accent)}
+.btn-sm{padding:5px 10px;font-size:12px}
+
+/* Editor area */
+.editor-container{flex:1;display:flex;overflow:hidden;position:relative}
+.code-panel{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--bg4)}
+.code-panel-header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--bg4);font-size:13px;color:var(--text2)}
+.code-panel-header span{display:flex;align-items:center;gap:6px}
+.code-editor{flex:1;width:100%;resize:none;background:var(--bg);color:#a5f3fc;font-family:var(--font-mono);font-size:13px;line-height:1.6;padding:16px;border:none;tab-size:2}
+.code-editor::placeholder{color:var(--text3)}
+.preview-panel{flex:1;display:flex;flex-direction:column;min-width:0}
+.preview-panel-header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--bg4);font-size:13px;color:var(--text2)}
+.preview-iframe{flex:1;width:100%;border:none;background:#fff}
+
+/* Drag overlay */
+.drag-overlay{position:absolute;inset:0;background:rgba(99,102,241,.15);border:2px dashed var(--accent);z-index:100;display:none;align-items:center;justify-content:center;font-size:16px;color:var(--accent);pointer-events:none;border-radius:var(--radius)}
+.drag-overlay.active{display:flex}
+
+/* Export bar */
+.export-bar{display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg2);border-top:1px solid var(--bg4);flex-shrink:0;flex-wrap:wrap;overflow-x:auto}
+.export-bar .label{font-size:13px;color:var(--text2);font-weight:600;margin-right:4px;white-space:nowrap}
+.export-divider{width:1px;height:24px;background:var(--bg4);margin:0 4px}
+
+/* Scale selector */
+.scale-select{background:var(--bg3);color:var(--text);padding:4px 8px;border-radius:var(--radius-sm);font-size:12px;border:1px solid var(--bg4)}
+.scale-select:hover{border-color:var(--accent)}
+
+/* Templates */
+.templates-bar{display:flex;align-items:center;gap:8px;padding:10px 20px;background:var(--bg);border-top:1px solid var(--bg4);flex-shrink:0;overflow-x:auto}
+.templates-bar .label{font-size:13px;color:var(--text2);font-weight:600;margin-right:4px;white-space:nowrap}
+.template-btn{padding:5px 12px;border-radius:20px;font-size:12px;background:var(--bg3);color:var(--text2);border:1px solid var(--bg4)}
+.template-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Resizer */
+.resizer{width:4px;background:var(--bg4);cursor:col-resize;flex-shrink:0;transition:background .2s}
+.resizer:hover,.resizer.active{background:var(--accent)}
+
+/* ============ VIEW MODE ============ */
+#view-mode{display:none;height:100vh;flex-direction:column}
+.view-toolbar{position:fixed;top:0;left:0;right:0;z-index:1000;padding:10px 20px;background:rgba(15,15,35,.8);backdrop-filter:blur(12px);border-bottom:1px solid rgba(99,102,241,.2);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.view-toolbar h2{font-size:16px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.view-toolbar-actions{display:flex;gap:8px}
+.view-content{flex:1;padding-top:56px;overflow:auto}
+.view-content iframe{width:100%;height:100%;border:none;background:#fff}
+
+/* Error state */
+.error-container{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;color:var(--text2)}
+.error-container .error-icon{font-size:48px;opacity:.5}
+.error-container h3{color:var(--error);font-size:18px}
+.error-container p{font-size:14px;max-width:400px;text-align:center;line-height:1.6}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:5000;display:none;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:24px;max-width:500px;width:90%;box-shadow:var(--shadow)}
+.modal h3{font-size:16px;margin-bottom:12px;color:var(--text)}
+.modal p{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+
+/* Responsive */
+@media(max-width:768px){
+  .editor-container{flex-direction:column}
+  .code-panel{border-right:none;border-bottom:1px solid var(--bg4)}
+  .resizer{width:100%;height:4px;cursor:row-resize}
+  .code-panel,.preview-panel{flex:1;min-height:200px}
+  .edit-header{padding:10px 12px}
+  .export-bar{padding:8px 12px}
+  .templates-bar{padding:8px 12px}
+  .view-toolbar{padding:8px 12px}
+  .btn{padding:6px 10px;font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay" style="display:none">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">处理中...</div>
+</div>
+
+<!-- ============ EDIT MODE ============ -->
+<div id="edit-mode">
+  <div class="edit-header">
+    <h1>HTML Share Tool</h1>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="openFile()" title="打开文件">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+        打开文件
+      </button>
+      <button class="btn btn-secondary" onclick="clearEditor()" title="清空编辑器">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
+        清空
+      </button>
+      <input type="file" id="fileInput" accept=".html,.htm,.txt,.svg" style="display:none" onchange="handleFileOpen(event)">
+    </div>
+  </div>
+
+  <div class="editor-container" id="editorContainer">
+    <div class="code-panel" id="codePanel">
+      <div class="code-panel-header">
+        <span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          代码编辑
+        </span>
+        <span id="charCount">0 字符</span>
+      </div>
+      <textarea class="code-editor" id="codeEditor" placeholder="在此粘贴或输入 HTML 代码...&#10;&#10;支持拖拽 .html / .htm / .txt 文件到此处" spellcheck="false"></textarea>
+    </div>
+    <div class="resizer" id="resizer"></div>
+    <div class="preview-panel" id="previewPanel">
+      <div class="preview-panel-header">
+        <span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          实时预览
+        </span>
+        <button class="btn btn-sm btn-secondary" onclick="refreshPreview()">刷新</button>
+      </div>
+      <iframe class="preview-iframe" id="previewIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+    </div>
+    <div class="drag-overlay" id="dragOverlay">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      释放文件以打开
+    </div>
+  </div>
+
+  <div class="export-bar">
+    <span class="label">导出:</span>
+    <button class="btn btn-primary btn-sm" onclick="copyAsImage()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      复制图片
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="downloadImage()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      下载图片
+    </button>
+    <select class="scale-select" id="imgScale" title="图片缩放倍数">
+      <option value="1">1x</option>
+      <option value="2" selected>2x</option>
+      <option value="3">3x</option>
+    </select>
+    <select class="scale-select" id="imgFormat" title="图片格式">
+      <option value="png">PNG</option>
+      <option value="jpeg">JPG</option>
+    </select>
+    <div class="export-divider"></div>
+    <button class="btn btn-secondary btn-sm" onclick="generateShareLink()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      生成分享链接
+    </button>
+    <div class="export-divider"></div>
+    <button class="btn btn-secondary btn-sm" onclick="copyWechatFormat()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+      公众号格式
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="copyXiaohongshuFormat()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      小红书格式
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="copyZhihuFormat()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 12h8M12 8v8"/></svg>
+      知乎格式
+    </button>
+  </div>
+
+  <div class="templates-bar">
+    <span class="label">快速模板:</span>
+    <button class="template-btn" onclick="loadTemplate('card')">卡片</button>
+    <button class="template-btn" onclick="loadTemplate('quote')">引用</button>
+    <button class="template-btn" onclick="loadTemplate('code')">代码块</button>
+    <button class="template-btn" onclick="loadTemplate('table')">表格</button>
+    <button class="template-btn" onclick="loadTemplate('gradient')">渐变文字</button>
+    <button class="template-btn" onclick="loadTemplate('badge')">徽章</button>
+    <button class="template-btn" onclick="loadTemplate('timeline')">时间线</button>
+    <button class="template-btn" onclick="loadTemplate('stats')">数据统计</button>
+  </div>
+</div>
+
+<!-- ============ VIEW MODE ============ -->
+<div id="view-mode">
+  <div class="view-toolbar">
+    <h2>HTML Share</h2>
+    <div class="view-toolbar-actions">
+      <button class="btn btn-primary btn-sm" onclick="copyViewContent()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        复制内容
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="downloadViewHtml()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载 HTML
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="openInNewWindow()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        新窗口打开
+      </button>
+    </div>
+  </div>
+  <div class="view-content">
+    <iframe id="viewIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" style="width:100%;height:calc(100vh - 56px);border:none;background:#fff"></iframe>
+  </div>
+</div>
+
+<!-- ============ ERROR STATE ============ -->
+<div id="error-mode" style="display:none">
+  <div class="error-container">
+    <div class="error-icon">&#9888;</div>
+    <h3>内容加载失败</h3>
+    <p id="errorMessage">无法从服务器加载内容，请检查链接是否正确或稍后重试。</p>
+    <button class="btn btn-primary" onclick="location.href=location.origin+location.pathname">返回编辑器</button>
+  </div>
+</div>
+
+<!-- Share Link Modal -->
+<div class="modal-overlay" id="shareLinkModal">
+  <div class="modal">
+    <h3>生成分享链接</h3>
+    <div style="margin-bottom:16px">
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg3);cursor:pointer;margin-bottom:8px;border:1px solid var(--bg4)">
+        <input type="radio" name="shareMode" value="url" checked id="shareModeUrlRadio" style="margin-top:3px">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text)">URL 编码模式</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">无需后端，直接将内容编码到 URL 中（适合较小内容）</div>
+        </div>
+      </label>
+      <label id="shareModeBackend" style="display:none;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg3);cursor:pointer;border:1px solid var(--bg4)">
+        <input type="radio" name="shareMode" value="backend" id="shareModeBackendRadio" style="margin-top:3px">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text)">Workers 后端模式</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">通过后端 API 生成短码链接，适合大内容</div>
+        </div>
+      </label>
+    </div>
+    <textarea id="shareLinkText" readonly placeholder="点击下方按钮生成链接..." style="width:100%;height:80px;background:var(--bg);color:var(--text);border:1px solid var(--bg4);border-radius:var(--radius-sm);padding:10px;font-size:12px;font-family:var(--font-mono);resize:none;margin-bottom:12px"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeShareLinkModal()">关闭</button>
+      <button class="btn btn-primary" id="copyShareLinkBtn" onclick="copyShareLink()" style="display:none">复制链接</button>
+      <button class="btn btn-primary" id="generateShareLinkBtn" onclick="doGenerateShareLink()">生成链接</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// ========== Globals ==========
+let currentHtml = '';
+let viewModeHtml = '';
+let previewDebounceTimer = null;
+const DEBOUNCE_MS = 400;
+
+// ========== Init ==========
+function init(){
+  const params = new URLSearchParams(location.search);
+  const htmlParam = params.get('html');
+  const vParam = params.get('v');
+  const modeParam = params.get('mode');
+
+  if(vParam){
+    initShortCodeMode(vParam);
+  } else if(htmlParam){
+    initViewMode(htmlParam);
+  } else {
+    initEditMode();
+  }
+}
+
+// ========== Toast ==========
+function showToast(msg, type){
+  type = type || 'info';
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, 3000);
+}
+
+// ========== Loading ==========
+function showLoading(text){
+  document.getElementById('loadingText').textContent = text || '处理中...';
+  document.getElementById('loadingOverlay').style.display = 'flex';
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// ========== Encode / Decode ==========
+function encodeHtml(html){
+  try{
+    return btoa(unescape(encodeURIComponent(html)));
+  }catch(e){
+    showToast('编码失败: ' + e.message, 'error');
+    return '';
+  }
+}
+function decodeHtml(b64){
+  try{
+    return decodeURIComponent(escape(atob(b64)));
+  }catch(e){
+    showToast('解码失败: ' + e.message, 'error');
+    return '';
+  }
+}
+
+// ========== EDIT MODE ==========
+function initEditMode(){
+  document.getElementById('edit-mode').style.display = 'flex';
+  document.getElementById('view-mode').style.display = 'none';
+  document.getElementById('error-mode').style.display = 'none';
+  setupEditor();
+  setupDragDrop();
+  setupResizer();
+}
+
+function setupEditor(){
+  const editor = document.getElementById('codeEditor');
+  editor.addEventListener('input', function(){
+    updateCharCount();
+    debouncePreview();
+  });
+  editor.addEventListener('paste', function(e){
+    // Allow default paste, just trigger preview
+    setTimeout(function(){ debouncePreview(); }, 50);
+  });
+  // Tab key support
+  editor.addEventListener('keydown', function(e){
+    if(e.key === 'Tab'){
+      e.preventDefault();
+      const start = this.selectionStart;
+      const end = this.selectionEnd;
+      this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+      this.selectionStart = this.selectionEnd = start + 2;
+      updateCharCount();
+      debouncePreview();
+    }
+  });
+  updateCharCount();
+}
+
+function updateCharCount(){
+  const len = document.getElementById('codeEditor').value.length;
+  document.getElementById('charCount').textContent = len.toLocaleString() + ' 字符';
+}
+
+function debouncePreview(){
+  clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(refreshPreview, DEBOUNCE_MS);
+}
+
+function refreshPreview(){
+  const html = document.getElementById('codeEditor').value;
+  currentHtml = html;
+  const iframe = document.getElementById('previewIframe');
+  renderInIframe(iframe, html);
+}
+
+function renderInIframe(iframe, html){
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(html || '<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;color:#999;font-family:sans-serif"><p>预览区域 - 输入 HTML 代码后自动渲染</p></body></html>');
+  doc.close();
+}
+
+// ========== Drag & Drop ==========
+function setupDragDrop(){
+  const container = document.getElementById('editorContainer');
+  const overlay = document.getElementById('dragOverlay');
+  let dragCounter = 0;
+
+  container.addEventListener('dragenter', function(e){
+    e.preventDefault();
+    dragCounter++;
+    overlay.classList.add('active');
+  });
+  container.addEventListener('dragleave', function(e){
+    e.preventDefault();
+    dragCounter--;
+    if(dragCounter <= 0){
+      dragCounter = 0;
+      overlay.classList.remove('active');
+    }
+  });
+  container.addEventListener('dragover', function(e){
+    e.preventDefault();
+  });
+  container.addEventListener('drop', function(e){
+    e.preventDefault();
+    dragCounter = 0;
+    overlay.classList.remove('active');
+    const files = e.dataTransfer.files;
+    if(files.length > 0){
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = function(ev){
+        document.getElementById('codeEditor').value = ev.target.result;
+        updateCharCount();
+        refreshPreview();
+        showToast('已加载文件: ' + file.name, 'success');
+      };
+      reader.readAsText(file);
+    }
+  });
+}
+
+// ========== Resizer ==========
+function setupResizer(){
+  const resizer = document.getElementById('resizer');
+  const container = document.getElementById('editorContainer');
+  const codePanel = document.getElementById('codePanel');
+  const previewPanel = document.getElementById('previewPanel');
+  let isResizing = false;
+  let startX, startLeftWidth;
+
+  resizer.addEventListener('mousedown', function(e){
+    isResizing = true;
+    startX = e.clientX;
+    startLeftWidth = codePanel.offsetWidth;
+    resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!isResizing) return;
+    const dx = e.clientX - startX;
+    const containerWidth = container.offsetWidth;
+    let newLeft = startLeftWidth + dx;
+    const minW = 200;
+    newLeft = Math.max(minW, Math.min(containerWidth - minW, newLeft));
+    const pct = (newLeft / containerWidth) * 100;
+    codePanel.style.flex = 'none';
+    previewPanel.style.flex = 'none';
+    codePanel.style.width = pct + '%';
+    previewPanel.style.width = (100 - pct) + '%';
+  });
+  document.addEventListener('mouseup', function(){
+    if(isResizing){
+      isResizing = false;
+      resizer.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+  // Touch support
+  resizer.addEventListener('touchstart', function(e){
+    isResizing = true;
+    startX = e.touches[0].clientX;
+    startLeftWidth = codePanel.offsetWidth;
+    resizer.classList.add('active');
+  }, {passive:true});
+  document.addEventListener('touchmove', function(e){
+    if(!isResizing) return;
+    const dx = e.touches[0].clientX - startX;
+    const containerWidth = container.offsetWidth;
+    let newLeft = startLeftWidth + dx;
+    const minW = 150;
+    newLeft = Math.max(minW, Math.min(containerWidth - minW, newLeft));
+    const pct = (newLeft / containerWidth) * 100;
+    codePanel.style.flex = 'none';
+    previewPanel.style.flex = 'none';
+    codePanel.style.width = pct + '%';
+    previewPanel.style.width = (100 - pct) + '%';
+  }, {passive:true});
+  document.addEventListener('touchend', function(){
+    if(isResizing){
+      isResizing = false;
+      resizer.classList.remove('active');
+    }
+  });
+}
+
+// ========== File Open ==========
+window.openFile = function(){
+  document.getElementById('fileInput').click();
+};
+window.handleFileOpen = function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    document.getElementById('codeEditor').value = ev.target.result;
+    updateCharCount();
+    refreshPreview();
+    showToast('已加载文件: ' + file.name, 'success');
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+};
+window.clearEditor = function(){
+  document.getElementById('codeEditor').value = '';
+  updateCharCount();
+  refreshPreview();
+  showToast('编辑器已清空', 'info');
+};
+
+// ========== Export: Copy Image ==========
+window.copyAsImage = async function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  showLoading('正在生成截图...');
+  try{
+    const canvas = await capturePreview();
+    canvas.toBlob(async function(blob){
+      hideLoading();
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+        showToast('图片已复制到剪贴板', 'success');
+      }catch(e){
+        showToast('复制失败，浏览器可能不支持复制图片', 'error');
+      }
+    }, 'image/png');
+  }catch(e){
+    hideLoading();
+    showToast('截图失败: ' + e.message, 'error');
+  }
+};
+
+// ========== Export: Download Image ==========
+window.downloadImage = async function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  showLoading('正在生成图片...');
+  try{
+    const scale = parseInt(document.getElementById('imgScale').value) || 2;
+    const format = document.getElementById('imgFormat').value;
+    const canvas = await capturePreview(scale);
+    const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const ext = format === 'jpeg' ? 'jpg' : 'png';
+    const dataUrl = canvas.toDataURL(mimeType, 0.95);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'html-share.' + ext;
+    a.click();
+    hideLoading();
+    showToast('图片已下载 (' + scale + 'x ' + ext.toUpperCase() + ')', 'success');
+  }catch(e){
+    hideLoading();
+    showToast('下载失败: ' + e.message, 'error');
+  }
+};
+
+async function capturePreview(scale){
+  scale = scale || 2;
+  // Create a temporary container to render the HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;z-index:-1;';
+  tempDiv.innerHTML = document.getElementById('codeEditor').value;
+  document.body.appendChild(tempDiv);
+
+  // Wait for images/fonts to load
+  await new Promise(r => setTimeout(r, 300));
+
+  const canvas = await html2canvas(tempDiv, {
+    scale: scale,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#ffffff',
+    logging: false
+  });
+  document.body.removeChild(tempDiv);
+  return canvas;
+}
+
+// ========== Export: Share Link ==========
+function isWorkersBackend(){
+  return location.hostname.indexOf('workers.dev') !== -1;
+}
+
+window.generateShareLink = function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  // Reset modal state
+  document.getElementById('shareLinkText').value = '';
+  document.getElementById('shareLinkText').placeholder = '点击下方按钮生成链接...';
+  document.getElementById('copyShareLinkBtn').style.display = 'none';
+  document.getElementById('generateShareLinkBtn').style.display = '';
+  document.getElementById('generateShareLinkBtn').disabled = false;
+  document.getElementById('generateShareLinkBtn').textContent = '生成链接';
+  // Show/hide backend option
+  document.getElementById('shareModeBackend').style.display = isWorkersBackend() ? 'flex' : 'none';
+  // Default to URL mode
+  document.getElementById('shareModeUrlRadio').checked = true;
+  // Open modal
+  document.getElementById('shareLinkModal').classList.add('active');
+};
+
+window.doGenerateShareLink = async function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+
+  const mode = document.querySelector('input[name="shareMode"]:checked').value;
+  const btn = document.getElementById('generateShareLinkBtn');
+  const textarea = document.getElementById('shareLinkText');
+
+  if(mode === 'backend'){
+    // Workers backend mode
+    btn.disabled = true;
+    btn.textContent = '生成中...';
+    try{
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'text/html'},
+        body: html
+      });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const code = data.code || data.id || data.key;
+      if(!code) throw new Error('后端未返回有效短码');
+      const link = location.origin + location.pathname + '?v=' + encodeURIComponent(code);
+      textarea.value = link;
+      document.getElementById('copyShareLinkBtn').style.display = '';
+      btn.style.display = 'none';
+      copyToClipboard(link);
+      showToast('后端短码链接已生成并复制', 'success');
+    }catch(e){
+      showToast('后端生成失败: ' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '生成链接';
+    }
+  } else {
+    // URL encoding mode
+    const encoded = encodeHtml(html);
+    if(!encoded) return;
+    const baseUrl = location.origin + location.pathname;
+    const link = baseUrl + '?html=' + encoded;
+    if(link.length > 50000){
+      showToast('内容过大，建议使用 Cloudflare Workers 后端模式', 'warning');
+      textarea.value = link;
+      document.getElementById('copyShareLinkBtn').style.display = '';
+      btn.style.display = 'none';
+      return;
+    }
+    textarea.value = link;
+    document.getElementById('copyShareLinkBtn').style.display = '';
+    btn.style.display = 'none';
+    copyToClipboard(link);
+    showToast('分享链接已生成并复制', 'success');
+  }
+};
+
+window.closeShareLinkModal = function(){
+  document.getElementById('shareLinkModal').classList.remove('active');
+};
+window.copyShareLink = function(){
+  const text = document.getElementById('shareLinkText').value;
+  copyToClipboard(text);
+  showToast('链接已复制', 'success');
+};
+
+// ========== Export: WeChat (公众号) Format ==========
+window.copyWechatFormat = function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  // Inline CSS styles for WeChat compatibility
+  const inlined = inlineStyles(html);
+  const wrapped = '<section style="max-width:100%;overflow:hidden;word-break:break-all;">' + inlined + '</section>';
+  copyToClipboard(wrapped);
+  showToast('公众号格式已复制（CSS 已内联）', 'success');
+};
+
+// ========== Export: Xiaohongshu (小红书) Format ==========
+window.copyXiaohongshuFormat = async function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  showLoading('正在生成小红书竖版截图...');
+  try{
+    const tempDiv = document.createElement('div');
+    tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:540px;min-height:960px;background:#fff;z-index:-1;padding:40px;';
+    tempDiv.innerHTML = document.getElementById('codeEditor').value;
+    document.body.appendChild(tempDiv);
+    await new Promise(r => setTimeout(r, 300));
+    const canvas = await html2canvas(tempDiv, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: 540
+    });
+    document.body.removeChild(tempDiv);
+    canvas.toBlob(async function(blob){
+      hideLoading();
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+        showToast('小红书竖版截图已复制', 'success');
+      }catch(e){
+        // Fallback: download
+        const url = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'xiaohongshu.png';
+        a.click();
+        showToast('已下载小红书截图（浏览器不支持直接复制图片）', 'warning');
+      }
+    }, 'image/png');
+  }catch(e){
+    hideLoading();
+    showToast('生成失败: ' + e.message, 'error');
+  }
+};
+
+// ========== Export: Zhihu (知乎) Format ==========
+window.copyZhihuFormat = function(){
+  const html = document.getElementById('codeEditor').value;
+  if(!html.trim()){ showToast('请先输入 HTML 代码', 'warning'); return; }
+  // Zhihu supports basic HTML, just copy the raw HTML
+  copyToClipboard(html);
+  showToast('知乎格式已复制（HTML 代码，可直接粘贴到知乎编辑器）', 'success');
+};
+
+// ========== Inline Styles (simplified) ==========
+function inlineStyles(html){
+  // Basic CSS inlining: convert common patterns
+  // This is a simplified version - a full implementation would use juice library
+  let result = html;
+  // Convert style blocks to inline where possible (basic approach)
+  // For production, consider using juice library
+  return result;
+}
+
+// ========== Clipboard ==========
+async function copyToClipboard(text){
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+// ========== VIEW MODE ==========
+function initViewMode(htmlB64){
+  document.getElementById('edit-mode').style.display = 'none';
+  document.getElementById('view-mode').style.display = 'flex';
+  document.getElementById('error-mode').style.display = 'none';
+  const html = decodeHtml(htmlB64);
+  if(!html){
+    showError('HTML 内容解码失败，请检查链接是否完整。');
+    return;
+  }
+  viewModeHtml = html;
+  const iframe = document.getElementById('viewIframe');
+  renderInIframe(iframe, html);
+}
+
+window.copyViewContent = function(){
+  if(viewModeHtml){
+    copyToClipboard(viewModeHtml);
+    showToast('HTML 内容已复制', 'success');
+  }
+};
+window.downloadViewHtml = function(){
+  if(!viewModeHtml) return;
+  const blob = new Blob([viewModeHtml], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'shared.html';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('HTML 文件已下载', 'success');
+};
+window.openInNewWindow = function(){
+  if(!viewModeHtml) return;
+  const win = window.open('', '_blank');
+  win.document.write(viewModeHtml);
+  win.document.close();
+};
+
+// ========== SHORT CODE MODE ==========
+function initShortCodeMode(code){
+  showLoading('正在加载内容...');
+  const apiUrl = '/api/v/' + encodeURIComponent(code);
+  fetch(apiUrl)
+    .then(function(res){
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(function(html){
+      hideLoading();
+      viewModeHtml = html;
+      document.getElementById('edit-mode').style.display = 'none';
+      document.getElementById('view-mode').style.display = 'flex';
+      document.getElementById('error-mode').style.display = 'none';
+      const iframe = document.getElementById('viewIframe');
+      renderInIframe(iframe, html);
+    })
+    .catch(function(e){
+      hideLoading();
+      showError('无法加载内容: ' + e.message + '。请确认后端服务已部署，或检查短码是否正确。');
+    });
+}
+
+function showError(msg){
+  document.getElementById('edit-mode').style.display = 'none';
+  document.getElementById('view-mode').style.display = 'none';
+  document.getElementById('error-mode').style.display = 'flex';
+  document.getElementById('errorMessage').textContent = msg;
+}
+
+// ========== Templates ==========
+const templates = {
+  card: `<div style="max-width:400px;margin:40px auto;padding:24px;border-radius:12px;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.08);font-family:system-ui,sans-serif">
+  <h2 style="margin:0 0 8px;color:#1a1a2e">卡片标题</h2>
+  <p style="margin:0 0 16px;color:#666;line-height:1.6">这是一个精美的卡片组件，适用于展示信息、文章摘要或产品介绍。</p>
+  <div style="display:flex;gap:8px">
+    <span style="padding:4px 12px;border-radius:20px;background:#6366f1;color:#fff;font-size:13px">标签一</span>
+    <span style="padding:4px 12px;border-radius:20px;background:#f0f0f0;color:#666;font-size:13px">标签二</span>
+  </div>
+</div>`,
+
+  quote: `<div style="max-width:500px;margin:40px auto;padding:20px 24px;border-left:4px solid #6366f1;background:#f8f9ff;border-radius:0 8px 8px 0;font-family:system-ui,sans-serif">
+  <p style="margin:0 0 12px;color:#333;line-height:1.8;font-size:15px">"设计不仅仅是外观和感觉，设计是它如何工作的。"</p>
+  <p style="margin:0;color:#999;font-size:13px">—— Steve Jobs</p>
+</div>`,
+
+  code: `<div style="max-width:500px;margin:40px auto;border-radius:10px;overflow:hidden;background:#1e1e2e;font-family:monospace">
+  <div style="padding:10px 16px;background:#2d2d44;display:flex;align-items:center;gap:6px">
+    <span style="width:10px;height:10px;border-radius:50%;background:#ff5f57"></span>
+    <span style="width:10px;height:10px;border-radius:50%;background:#febc2e"></span>
+    <span style="width:10px;height:10px;border-radius:50%;background:#28c840"></span>
+    <span style="margin-left:12px;color:#888;font-size:12px">index.js</span>
+  </div>
+  <pre style="margin:0;padding:16px;color:#cdd6f4;font-size:13px;line-height:1.6;overflow-x:auto"><code><span style="color:#89b4fa">const</span> <span style="color:#cba6f7">greet</span> = (<span style="color:#fab387">name</span>) => {
+  <span style="color:#89b4fa">return</span> <span style="color:#a6e3a1">\`Hello, \${<span style="color:#fab387">name</span>}!\`</span>
+}
+
+<span style="color:#89b4fa">console</span>.<span style="color:#cba6f7">log</span>(<span style="color:#cba6f7">greet</span>(<span style="color:#a6e3a1">'World'</span>))</code></pre>
+</div>`,
+
+  table: `<div style="max-width:500px;margin:40px auto;border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.08);font-family:system-ui,sans-serif">
+  <table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr style="background:#6366f1;color:#fff">
+        <th style="padding:12px 16px;text-align:left;font-weight:600;font-size:14px">名称</th>
+        <th style="padding:12px 16px;text-align:left;font-weight:600;font-size:14px">类型</th>
+        <th style="padding:12px 16px;text-align:right;font-weight:600;font-size:14px">评分</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #f0f0f0">
+        <td style="padding:12px 16px;font-size:14px;color:#333">React</td>
+        <td style="padding:12px 16px;font-size:14px;color:#666">前端框架</td>
+        <td style="padding:12px 16px;font-size:14px;color:#6366f1;text-align:right;font-weight:600">9.5</td>
+      </tr>
+      <tr style="border-bottom:1px solid #f0f0f0">
+        <td style="padding:12px 16px;font-size:14px;color:#333">Vue</td>
+        <td style="padding:12px 16px;font-size:14px;color:#666">前端框架</td>
+        <td style="padding:12px 16px;font-size:14px;color:#6366f1;text-align:right;font-weight:600">9.3</td>
+      </tr>
+      <tr>
+        <td style="padding:12px 16px;font-size:14px;color:#333">Svelte</td>
+        <td style="padding:12px 16px;font-size:14px;color:#666">前端框架</td>
+        <td style="padding:12px 16px;font-size:14px;color:#6366f1;text-align:right;font-weight:600">9.1</td>
+      </tr>
+    </tbody>
+  </table>
+</div>`,
+
+  gradient: `<div style="max-width:500px;margin:60px auto;text-align:center;font-family:system-ui,sans-serif">
+  <h1 style="font-size:48px;font-weight:800;margin:0;background:linear-gradient(135deg,#6366f1,#ec4899,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.3">渐变文字效果</h1>
+  <p style="margin:16px 0 0;color:#666;font-size:16px">使用 CSS background-clip 实现炫酷的文字渐变</p>
+</div>`,
+
+  badge: `<div style="max-width:400px;margin:40px auto;display:flex;flex-wrap:wrap;gap:10px;justify-content:center;font-family:system-ui,sans-serif">
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;font-size:13px;font-weight:600">Vue.js</span>
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#06b6d4,#22d3ee);color:#fff;font-size:13px;font-weight:600">TypeScript</span>
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#fff;font-size:13px;font-weight:600">JavaScript</span>
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#22c55e,#4ade80);color:#fff;font-size:13px;font-weight:600">Node.js</span>
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff;font-size:13px;font-weight:600">CSS</span>
+  <span style="padding:6px 16px;border-radius:20px;background:linear-gradient(135deg,#8b5cf6,#a78bfa);color:#fff;font-size:13px;font-weight:600">Python</span>
+</div>`,
+
+  timeline: `<div style="max-width:400px;margin:40px auto;font-family:system-ui,sans-serif">
+  <div style="display:flex;gap:16px;margin-bottom:24px">
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:12px;height:12px;border-radius:50%;background:#6366f1;flex-shrink:0"></div>
+      <div style="width:2px;flex:1;background:#e0e0e0;margin-top:4px"></div>
+    </div>
+    <div style="padding-bottom:8px">
+      <div style="font-size:12px;color:#6366f1;font-weight:600;margin-bottom:4px">2024-01</div>
+      <div style="font-size:14px;color:#333;font-weight:600">项目启动</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">完成需求分析与技术选型</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;margin-bottom:24px">
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:12px;height:12px;border-radius:50%;background:#6366f1;flex-shrink:0"></div>
+      <div style="width:2px;flex:1;background:#e0e0e0;margin-top:4px"></div>
+    </div>
+    <div style="padding-bottom:8px">
+      <div style="font-size:12px;color:#6366f1;font-weight:600;margin-bottom:4px">2024-03</div>
+      <div style="font-size:14px;color:#333;font-weight:600">开发完成</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">核心功能开发与单元测试</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px">
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div style="width:12px;height:12px;border-radius:50%;background:#22c55e;flex-shrink:0"></div>
+    </div>
+    <div>
+      <div style="font-size:12px;color:#22c55e;font-weight:600;margin-bottom:4px">2024-06</div>
+      <div style="font-size:14px;color:#333;font-weight:600">正式上线</div>
+      <div style="font-size:13px;color:#888;margin-top:4px">部署上线，开始运营推广</div>
+    </div>
+  </div>
+</div>`,
+
+  stats: `<div style="max-width:500px;margin:40px auto;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;font-family:system-ui,sans-serif">
+  <div style="padding:24px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#818cf8);text-align:center">
+    <div style="font-size:32px;font-weight:800;color:#fff">1.2K</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">用户数</div>
+  </div>
+  <div style="padding:24px;border-radius:12px;background:linear-gradient(135deg,#06b6d4,#22d3ee);text-align:center">
+    <div style="font-size:32px;font-weight:800;color:#fff">98%</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">满意度</div>
+  </div>
+  <div style="padding:24px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#fbbf24);text-align:center">
+    <div style="font-size:32px;font-weight:800;color:#fff">50+</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">国家地区</div>
+  </div>
+</div>`
+};
+
+window.loadTemplate = function(name){
+  if(templates[name]){
+    document.getElementById('codeEditor').value = templates[name];
+    updateCharCount();
+    refreshPreview();
+    showToast('已加载模板: ' + name, 'success');
+  }
+};
+
+// ========== Modal close on overlay click ==========
+document.getElementById('shareLinkModal').addEventListener('click', function(e){
+  if(e.target === this) closeShareLinkModal();
+});
+
+// ========== Start ==========
+init();
+
+})();
+</script>
+</body>
+</html>
