@@ -620,8 +620,13 @@ async function capturePreview(scale){
 
 // ========== Export: Share Link ==========
 function isWorkersBackend(){
-  return location.hostname.indexOf('workers.dev') !== -1;
+  // Workers 域名 或 配置了自定义 API 地址
+  return location.hostname.indexOf('workers.dev') !== -1 
+    || location.hostname.indexOf('jialuodev.workers.dev') !== -1
+    || typeof WORKERS_API !== 'undefined';
 }
+// 可配置的 Workers API 地址（部署到 GitHub Pages 时使用）
+var WORKERS_API = 'https://html-share.jialuodev.workers.dev';
 
 window.generateShareLink = function(){
   const html = document.getElementById('codeEditor').value;
@@ -650,25 +655,44 @@ window.doGenerateShareLink = async function(){
   const textarea = document.getElementById('shareLinkText');
 
   if(mode === 'backend'){
-    // Workers backend mode
+    // Workers backend mode（含预览图，支持社交平台链接预览）
     btn.disabled = true;
     btn.textContent = '生成中...';
     try{
-      const res = await fetch('/api/save', {
+      // 1. 先保存 HTML，获取短码
+      const apiUrl = (typeof WORKERS_API !== 'undefined' && WORKERS_API) ? WORKERS_API : location.origin;
+      const res = await fetch(apiUrl + '/api/save', {
         method: 'POST',
-        headers: {'Content-Type': 'text/html'},
-        body: html
+        headers: {'Content-Type': 'application/json; charset=utf-8'},
+        body: JSON.stringify({ html })
       });
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       const code = data.code || data.id || data.key;
       if(!code) throw new Error('后端未返回有效短码');
-      const link = location.origin + location.pathname + '?v=' + encodeURIComponent(code);
+
+      // 2. 尝试生成预览图并上传（让社交平台显示预览卡片）
+      btn.textContent = '生成预览图...';
+      try {
+        const previewBlob = await generatePreviewImage();
+        if (previewBlob) {
+          const formData = new FormData();
+          formData.append('code', code);
+          formData.append('image', previewBlob, 'preview.png');
+          await fetch(apiUrl + '/api/upload-preview', { method: 'POST', body: formData });
+        }
+      } catch(previewErr) {
+        console.warn('预览图生成失败（不影响链接）:', previewErr);
+      }
+
+      // 3. 显示链接（使用 Workers 域名作为分享链接）
+      const shareOrigin = (typeof WORKERS_API !== 'undefined' && WORKERS_API) ? WORKERS_API : location.origin;
+      const link = shareOrigin + '/s/' + code;
       textarea.value = link;
       document.getElementById('copyShareLinkBtn').style.display = '';
       btn.style.display = 'none';
       copyToClipboard(link);
-      showToast('后端短码链接已生成并复制', 'success');
+      showToast('分享链接已生成（含社交预览）', 'success');
     }catch(e){
       showToast('后端生成失败: ' + e.message, 'error');
       btn.disabled = false;
@@ -681,7 +705,7 @@ window.doGenerateShareLink = async function(){
     const baseUrl = location.origin + location.pathname;
     const link = baseUrl + '?html=' + encoded;
     if(link.length > 50000){
-      showToast('内容过大，建议使用 Cloudflare Workers 后端模式', 'warning');
+      showToast('内容过大，建议使用后端模式（支持社交预览）', 'warning');
       textarea.value = link;
       document.getElementById('copyShareLinkBtn').style.display = '';
       btn.style.display = 'none';
@@ -694,6 +718,35 @@ window.doGenerateShareLink = async function(){
     showToast('分享链接已生成并复制', 'success');
   }
 };
+
+// 生成预览图（使用 html2canvas 截图预览区域）
+async function generatePreviewImage() {
+  const previewFrame = document.getElementById('previewFrame');
+  if (!previewFrame || !previewFrame.contentDocument) return null;
+
+  const body = previewFrame.contentDocument.body;
+  if (!body || !body.innerHTML.trim()) return null;
+
+  // 使用 html2canvas 截图
+  const canvas = await html2canvas(body, {
+    width: 1200,
+    height: 630,
+    scale: 1,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    windowWidth: 1200,
+    windowHeight: 630
+  });
+
+  // 转换为 Blob
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob);
+    }, 'image/png', 0.85);
+  });
+}
 
 window.closeShareLinkModal = function(){
   document.getElementById('shareLinkModal').classList.remove('active');
